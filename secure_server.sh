@@ -35,8 +35,23 @@ sudo ufw enable
 # Создаем нового пользователя
 echo ""
 echo "Creating new user '$NEW_USER'..."
-sudo adduser "$NEW_USER"
-sudo usermod -aG sudo "$NEW_USER"
+echo "Please enter the following details:"
+echo "- Username: $NEW_USER"
+echo "- Password: (will be prompted)"
+echo "- Full Name: (optional)"
+echo "- Room Number: (optional)"
+echo "- Work Phone: (optional)"
+echo "- Home Phone: (optional)"
+echo "- Other: (optional)"
+
+read -sp "Enter password for $NEW_USER: " PASSWORD
+echo ""
+
+sudo adduser "$NEW_USER" << EOF
+$PASSWORD
+$PASSWORD
+test
+EOF
 
 # Автоматические обновления
 echo ""
