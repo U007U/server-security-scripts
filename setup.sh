@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================
-# Безопасная настройка сервера Ubuntu v1.2
+# Безопасная настройка сервера Ubuntu v1.3
 # https://github.com/U007U/server-security-scripts
 # ==============================================
 
@@ -10,7 +10,7 @@ if ! command -v lsb_release &> /dev/null || ! lsb_release -d 2>&1 | grep -q Ubun
     exit 1
 fi
 
-# Non-interactive mode с самого начала
+# Non-interactive mode
 export DEBIAN_FRONTEND=noninteractive
 export DEBIAN_PRIORITY=critical
 
@@ -18,9 +18,9 @@ export DEBIAN_PRIORITY=critical
 LOGFILE="setup_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$LOGFILE")
 exec 2>&1
-echo "✅ Ubuntu OK. v1.2 ($(date))"
+echo "✅ Ubuntu OK. v1.3 ($(date))"
 
-# Выбор языка
+# Выбор языка (тот же код)
 echo "Choose language / Выберите язык:"
 echo "1) English"
 echo "2) Русский"
@@ -62,7 +62,11 @@ else
     TXT_ROOT_DISABLED="⚠️ Root SSH disabled."
 fi
 
-SERVER_IP=$(curl -s ifconfig.me)
+# Надёжный IP
+SERVER_IP=$(curl -s https://ipinfo.io/ip || curl -s ifconfig.me || echo "YOUR_IP")
+if [ "$SERVER_IP" = "YOUR_IP" ]; then
+    echo "⚠️ IP не определён. Замените YOUR_IP на реальный."
+fi
 
 echo "$TXT_USER"
 read -p "Username: " NEW_USER
@@ -74,11 +78,11 @@ echo "$TXT_PORT"
 read -p "Port [2222]: " SSH_PORT
 SSH_PORT=${SSH_PORT:-2222}
 
+ADD_KEY=0
+DISABLE_PASSWORD=0
 echo "$TXT_KEY"
 read -p "(yes/no): " HAS_KEY
 HAS_KEY=$(echo "$HAS_KEY" | tr '[:upper:]' '[:lower:]')
-ADD_KEY=0
-DISABLE_PASSWORD=0
 if [[ "$HAS_KEY" =~ ^(yes|y|да|д)$ ]]; then
     echo "$TXT_KEY_NOW"
     read -p "(yes/no): " ADD_KEY_NOW
@@ -123,11 +127,11 @@ fi
 systemctl restart sshd
 
 echo "$TXT_FW"
-ufw --force disable
+ufw --force disable >/dev/null 2>&1
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow "$SSH_PORT"/tcp comment 'SSH'
-ufw --force enable
+ufw --force enable >/dev/null 2>&1
 
 echo "$TXT_FAIL2BAN"
 cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local 2>/dev/null || true
@@ -135,9 +139,9 @@ sed -i 's/bantime = 600/bantime = 3600/; s/maxretry = 5/maxretry = 3/' /etc/fail
 systemctl enable fail2ban
 systemctl start fail2ban
 
-# Создание пользователя БЕЗ вопросов
-echo "Создаём пользователя $NEW_USER (без лишних вопросов)..."
-adduser --disabled-password --gecos "" "$NEW_USER" < /dev/null
+# Создание пользователя БЕЗ вопросов/подтверждений
+echo "Создаём пользователя $NEW_USER..."
+echo -e "$NEW_USER\n$NEW_USER\n" | adduser --disabled-password --gecos "" --quiet "$NEW_USER" 2>/dev/null
 usermod -aG sudo "$NEW_USER"
 
 if [ "$ADD_KEY" = "1" ]; then
