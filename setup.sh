@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================
-# Безопасная настройка сервера Ubuntu v1.1
+# Безопасная настройка сервера Ubuntu v1.2
 # https://github.com/U007U/server-security-scripts
 # ==============================================
 
@@ -10,11 +10,15 @@ if ! command -v lsb_release &> /dev/null || ! lsb_release -d 2>&1 | grep -q Ubun
     exit 1
 fi
 
+# Non-interactive mode с самого начала
+export DEBIAN_FRONTEND=noninteractive
+export DEBIAN_PRIORITY=critical
+
 # Лог
 LOGFILE="setup_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$LOGFILE")
 exec 2>&1
-echo "✅ Ubuntu OK. v1.1 ($(date))"
+echo "✅ Ubuntu OK. v1.2 ($(date))"
 
 # Выбор языка
 echo "Choose language / Выберите язык:"
@@ -73,6 +77,8 @@ SSH_PORT=${SSH_PORT:-2222}
 echo "$TXT_KEY"
 read -p "(yes/no): " HAS_KEY
 HAS_KEY=$(echo "$HAS_KEY" | tr '[:upper:]' '[:lower:]')
+ADD_KEY=0
+DISABLE_PASSWORD=0
 if [[ "$HAS_KEY" =~ ^(yes|y|да|д)$ ]]; then
     echo "$TXT_KEY_NOW"
     read -p "(yes/no): " ADD_KEY_NOW
@@ -84,21 +90,26 @@ if [[ "$HAS_KEY" =~ ^(yes|y|да|д)$ ]]; then
             ADD_KEY=1
             DISABLE_PASSWORD=1
             echo "$TXT_KEY_ADD"
+        else
+            echo "$TXT_PWD_ON"
         fi
+    else
+        echo "$TXT_PWD_ON"
     fi
+else
+    echo "$TXT_PWD_ON"
 fi
 
 echo "$TXT_START"
-export DEBIAN_FRONTEND=noninteractive
 
 echo "$TXT_UPDATE"
-apt update && apt full-upgrade -y
+apt update -qq && apt full-upgrade -y -qq
 
 echo "$TXT_PACKAGES"
-apt install -y unattended-upgrades ufw fail2ban
+apt install -y -qq unattended-upgrades ufw fail2ban
 
 echo "$TXT_AUTOUP"
-dpkg-reconfigure --priority=low unattended-upgrades -f noninteractive
+dpkg-reconfigure -f noninteractive unattended-upgrades || true
 
 echo "$TXT_SSH"
 cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
@@ -124,7 +135,9 @@ sed -i 's/bantime = 600/bantime = 3600/; s/maxretry = 5/maxretry = 3/' /etc/fail
 systemctl enable fail2ban
 systemctl start fail2ban
 
-adduser "$NEW_USER"
+# Создание пользователя БЕЗ вопросов
+echo "Создаём пользователя $NEW_USER (без лишних вопросов)..."
+adduser --disabled-password --gecos "" "$NEW_USER" < /dev/null
 usermod -aG sudo "$NEW_USER"
 
 if [ "$ADD_KEY" = "1" ]; then
