@@ -1,7 +1,20 @@
 #!/bin/bash
 # ==============================================
-# Безопасная настройка сервера Ubuntu
+# Безопасная настройка сервера Ubuntu v1.1
+# https://github.com/U007U/server-security-scripts
 # ==============================================
+
+# Проверка Ubuntu
+if ! command -v lsb_release &> /dev/null || ! lsb_release -d 2>&1 | grep -q Ubuntu; then
+    echo "❌ Только для Ubuntu! Выход."
+    exit 1
+fi
+
+# Лог
+LOGFILE="setup_$(date +%Y%m%d_%H%M%S).log"
+exec > >(tee -a "$LOGFILE")
+exec 2>&1
+echo "✅ Ubuntu OK. v1.1 ($(date))"
 
 # Выбор языка
 echo "Choose language / Выберите язык:"
@@ -106,7 +119,7 @@ ufw allow "$SSH_PORT"/tcp comment 'SSH'
 ufw --force enable
 
 echo "$TXT_FAIL2BAN"
-cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local 2>/dev/null
+cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local 2>/dev/null || true
 sed -i 's/bantime = 600/bantime = 3600/; s/maxretry = 5/maxretry = 3/' /etc/fail2ban/jail.local
 systemctl enable fail2ban
 systemctl start fail2ban
@@ -125,5 +138,7 @@ fi
 echo ""
 echo "$TXT_DONE"
 echo "$TXT_ROOT_DISABLED"
+echo "📄 Лог: $LOGFILE"
 echo ""
 rm -- "$0"
+echo "✅ Скрипт удалён."
