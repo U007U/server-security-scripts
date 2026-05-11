@@ -1,7 +1,6 @@
 #!/bin/bash
 # ==============================================
-# Безопасная настройка сервера Ubuntu v1.3
-# https://github.com/U007U/server-security-scripts
+# Безопасная настройка сервера Ubuntu v2.0
 # ==============================================
 
 # Проверка Ubuntu
@@ -10,122 +9,141 @@ if ! command -v lsb_release &> /dev/null || ! lsb_release -d 2>&1 | grep -q Ubun
     exit 1
 fi
 
-# Non-interactive mode
 export DEBIAN_FRONTEND=noninteractive
-export DEBIAN_PRIORITY=critical
 
 # Лог
 LOGFILE="setup_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$LOGFILE")
 exec 2>&1
-echo "✅ Ubuntu OK. v1.3 ($(date))"
+echo "✅ Ubuntu OK. v2.0 ($(date))"
 
-# Выбор языка (тот же код)
+# Выбор языка
 echo "Choose language / Выберите язык:"
 echo "1) English"
 echo "2) Русский"
 read -p "Enter 1 or 2 / Введите 1 или 2: " LANG_CHOICE
 
 if [ "$LANG_CHOICE" = "2" ]; then
-    TXT_USER="Создадим нового пользователя (вместо root). Введите имя:"
-    TXT_PORT="Изменим порт SSH (сейчас 22). Рекомендуется 2222. Введите порт или Enter:"
-    TXT_KEY="У вас есть SSH-ключ? (yes/no/да/нет):"
-    TXT_KEY_NOW="Хотите добавить публичный ключ сейчас? (yes/no):"
-    TXT_PASTE="Вставьте публичный ключ (одна строка):"
-    TXT_KEY_ADD="Ключ добавлен. Пароли будут отключены."
-    TXT_PWD_ON="Пароли остаются включенными. Позже настройте ключи вручную."
+    TXT_USER="Создадим нового пользователя. Введите имя:"
+    TXT_PORT="Изменим порт SSH. Рекомендуется 2222. Введите порт или Enter:"
+    TXT_PASS="Введите пароль для пользователя (минимум 6 символов):"
+    TXT_KEY="У вас есть SSH-ключ? (yes/no):"
+    TXT_KEY_PASTE="Вставьте публичный ключ (одна строка):"
+    TXT_KEY_ADDED="✅ Ключ добавлен"
     TXT_START="Начинаем настройку..."
     TXT_UPDATE="Обновление системы..."
     TXT_PACKAGES="Установка пакетов..."
-    TXT_AUTOUP="Настройка автообновлений..."
-    TXT_SSH="Настройка SSH (порт, запрет root)..."
-    TXT_FW="Настройка фаервола (разрешён только SSH)..."
-    TXT_FAIL2BAN="Настройка Fail2Ban..."
-    TXT_DONE="✅ Готово! Подключайтесь: ssh $NEW_USER@$SERVER_IP -p $SSH_PORT"
-    TXT_ROOT_DISABLED="⚠️ Root по SSH отключён."
+    TXT_SSH="Настройка SSH..."
+    TXT_FW="Настройка фаервола..."
+    TXT_USER_CREATE="Создание пользователя..."
+    TXT_DONE="✅ НАСТРОЙКА ЗАВЕРШЕНА"
+    TXT_RESULT="РЕЗУЛЬТАТ"
 else
-    TXT_USER="Create a new user (instead of root). Enter username:"
-    TXT_PORT="Change SSH port (currently 22). Recommended 2222. Enter port or press Enter:"
+    TXT_USER="Create a new user. Enter username:"
+    TXT_PORT="Change SSH port. Recommended 2222. Enter port or press Enter:"
+    TXT_PASS="Enter password for user (min 6 characters):"
     TXT_KEY="Do you have an SSH key? (yes/no):"
-    TXT_KEY_NOW="Do you want to add your public key now? (yes/no):"
-    TXT_PASTE="Paste your public key (one line):"
-    TXT_KEY_ADD="Key added. Passwords will be disabled."
-    TXT_PWD_ON="Passwords remain enabled. Set up keys manually later."
+    TXT_KEY_PASTE="Paste your public key (one line):"
+    TXT_KEY_ADDED="✅ Key added"
     TXT_START="Starting setup..."
     TXT_UPDATE="Updating system..."
     TXT_PACKAGES="Installing packages..."
-    TXT_AUTOUP="Setting up auto-upgrades..."
-    TXT_SSH="Configuring SSH (port, disable root)..."
-    TXT_FW="Configuring firewall (allow only SSH)..."
-    TXT_FAIL2BAN="Configuring Fail2Ban..."
-    TXT_DONE="✅ Done! Connect via: ssh $NEW_USER@$SERVER_IP -p $SSH_PORT"
-    TXT_ROOT_DISABLED="⚠️ Root SSH disabled."
+    TXT_SSH="Configuring SSH..."
+    TXT_FW="Configuring firewall..."
+    TXT_USER_CREATE="Creating user..."
+    TXT_DONE="✅ SETUP COMPLETE"
+    TXT_RESULT="RESULT"
 fi
 
-# Надёжный IP
+# Получаем IP
 SERVER_IP=$(curl -s https://ipinfo.io/ip || curl -s ifconfig.me || echo "YOUR_IP")
-if [ "$SERVER_IP" = "YOUR_IP" ]; then
-    echo "⚠️ IP не определён. Замените YOUR_IP на реальный."
-fi
 
 echo "$TXT_USER"
 read -p "Username: " NEW_USER
-while [ -z "$NEW_USER" ]; do
-    read -p "Username cannot be empty. Enter username: " NEW_USER
+
+echo "$TXT_PASS"
+read -s -p "Password: " USER_PASS
+echo
+read -s -p "Confirm password: " USER_PASS_CONFIRM
+echo
+
+while [ "$USER_PASS" != "$USER_PASS_CONFIRM" ] || [ ${#USER_PASS} -lt 6 ]; do
+    echo "❌ Пароли не совпадают или короче 6 символов"
+    read -s -p "Password: " USER_PASS
+    echo
+    read -s -p "Confirm password: " USER_PASS_CONFIRM
+    echo
 done
 
 echo "$TXT_PORT"
 read -p "Port [2222]: " SSH_PORT
 SSH_PORT=${SSH_PORT:-2222}
 
-ADD_KEY=0
-DISABLE_PASSWORD=0
 echo "$TXT_KEY"
 read -p "(yes/no): " HAS_KEY
 HAS_KEY=$(echo "$HAS_KEY" | tr '[:upper:]' '[:lower:]')
+
+SSH_KEY=""
 if [[ "$HAS_KEY" =~ ^(yes|y|да|д)$ ]]; then
-    echo "$TXT_KEY_NOW"
-    read -p "(yes/no): " ADD_KEY_NOW
-    ADD_KEY_NOW=$(echo "$ADD_KEY_NOW" | tr '[:upper:]' '[:lower:]')
-    if [[ "$ADD_KEY_NOW" =~ ^(yes|y|да|д)$ ]]; then
-        echo "$TXT_PASTE"
-        read -r SSH_KEY
-        if [ -n "$SSH_KEY" ]; then
-            ADD_KEY=1
-            DISABLE_PASSWORD=1
-            echo "$TXT_KEY_ADD"
-        else
-            echo "$TXT_PWD_ON"
-        fi
-    else
-        echo "$TXT_PWD_ON"
-    fi
-else
-    echo "$TXT_PWD_ON"
+    echo "$TXT_KEY_PASTE"
+    read -r SSH_KEY
 fi
 
 echo "$TXT_START"
 
+# Обновление
 echo "$TXT_UPDATE"
 apt update -qq && apt full-upgrade -y -qq
 
+# Установка пакетов
 echo "$TXT_PACKAGES"
-apt install -y -qq unattended-upgrades ufw fail2ban
+apt install -y -qq unattended-upgrades ufw fail2ban whois
 
-echo "$TXT_AUTOUP"
+# Автообновления
 dpkg-reconfigure -f noninteractive unattended-upgrades || true
 
+# Создание пользователя
+echo "$TXT_USER_CREATE"
+useradd -m -s /bin/bash "$NEW_USER"
+echo "$NEW_USER:$USER_PASS" | chpasswd
+usermod -aG sudo "$NEW_USER"
+
+# Добавление SSH ключа если есть
+if [ -n "$SSH_KEY" ]; then
+    mkdir -p /home/$NEW_USER/.ssh
+    echo "$SSH_KEY" > /home/$NEW_USER/.ssh/authorized_keys
+    chown -R $NEW_USER:$NEW_USER /home/$NEW_USER/.ssh
+    chmod 700 /home/$NEW_USER/.ssh
+    chmod 600 /home/$NEW_USER/.ssh/authorized_keys
+    echo "$TXT_KEY_ADDED"
+fi
+
+# Настройка SSH
 echo "$TXT_SSH"
 cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
-sed -i "s/^#Port 22/Port $SSH_PORT/; s/^Port 22/Port $SSH_PORT/" /etc/ssh/sshd_config
-sed -i 's/^PermitRootLogin yes/PermitRootLogin no/; s/^#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config
-grep -q "^PermitRootLogin no" /etc/ssh/sshd_config || echo "PermitRootLogin no" >> /etc/ssh/sshd_config
-if [ "$DISABLE_PASSWORD" = "1" ]; then
-    sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/; s/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-    grep -q "^PasswordAuthentication no" /etc/ssh/sshd_config || echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
-fi
-systemctl restart sshd
 
+# Правильная настройка порта
+sed -i "s/^Port .*/Port $SSH_PORT/" /etc/ssh/sshd_config
+grep -q "^Port $SSH_PORT" /etc/ssh/sshd_config && sed -i "s/^#Port .*/Port $SSH_PORT/" /etc/ssh/sshd_config
+if ! grep -q "^Port $SSH_PORT" /etc/ssh/sshd_config; then
+    echo "Port $SSH_PORT" >> /etc/ssh/sshd_config
+fi
+
+# Запрет root
+sed -i 's/^PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config
+grep -q "^PermitRootLogin no" /etc/ssh/sshd_config || echo "PermitRootLogin no" >> /etc/ssh/sshd_config
+
+# Отключаем пароли если есть ключ
+if [ -n "$SSH_KEY" ]; then
+    sed -i 's/^PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
+    echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
+    sed -i 's/^ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
+fi
+
+# Перезапуск SSH
+systemctl restart sshd || systemctl restart ssh
+
+# Настройка фаервола
 echo "$TXT_FW"
 ufw --force disable >/dev/null 2>&1
 ufw default deny incoming
@@ -133,28 +151,39 @@ ufw default allow outgoing
 ufw allow "$SSH_PORT"/tcp comment 'SSH'
 ufw --force enable >/dev/null 2>&1
 
-echo "$TXT_FAIL2BAN"
+# Настройка Fail2Ban
 cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local 2>/dev/null || true
-sed -i 's/bantime = 600/bantime = 3600/; s/maxretry = 5/maxretry = 3/' /etc/fail2ban/jail.local
+sed -i "s/^port .*/port = $SSH_PORT/" /etc/fail2ban/jail.local 2>/dev/null || true
 systemctl enable fail2ban
 systemctl start fail2ban
 
-# Создание пользователя БЕЗ вопросов/подтверждений
-echo "Создаём пользователя $NEW_USER..."
-echo -e "$NEW_USER\n$NEW_USER\n" | adduser --disabled-password --gecos "" --quiet "$NEW_USER" 2>/dev/null
-usermod -aG sudo "$NEW_USER"
-
-if [ "$ADD_KEY" = "1" ]; then
-    mkdir -p /home/$NEW_USER/.ssh
-    echo "$SSH_KEY" > /home/$NEW_USER/.ssh/authorized_keys
-    chown -R $NEW_USER:$NEW_USER /home/$NEW_USER/.ssh
-    chmod 700 /home/$NEW_USER/.ssh
-    chmod 600 /home/$NEW_USER/.ssh/authorized_keys
-fi
-
+# Финальный вывод
+clear
 echo ""
+echo "=========================================="
 echo "$TXT_DONE"
-echo "$TXT_ROOT_DISABLED"
+echo "=========================================="
+echo ""
+echo "📋 $TXT_RESULT:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "   🌐 IP-адрес:     $SERVER_IP"
+echo "   👤 Пользователь: $NEW_USER"
+echo "   🔑 Пароль:       [скрыт]"
+echo "   🚪 Порт SSH:     $SSH_PORT"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+if [ -n "$SSH_KEY" ]; then
+    echo "   🔐 Аутентификация: по SSH-ключу"
+else
+    echo "   🔐 Аутентификация: по паролю"
+fi
+echo "   ⚠️ Root доступ: отключён"
+echo ""
+echo "──────────────────────────────────────────"
+echo "   🖥️ Команда для подключения:"
+echo "   ssh $NEW_USER@$SERVER_IP -p $SSH_PORT"
+echo "──────────────────────────────────────────"
+echo ""
 echo "📄 Лог: $LOGFILE"
 echo ""
 rm -- "$0"
